@@ -1,0 +1,38 @@
+﻿# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Frontend
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+logs/
+uploads/
+temp/
+*.wav
+*.mp3
+*.m4a
+
+# Test artifacts
+.coverage
+htmlcov/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
