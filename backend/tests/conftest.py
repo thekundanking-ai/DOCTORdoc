@@ -1,0 +1,50 @@
+import os
+import sys
+
+from sqlalchemy import create_engine, text
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+ADMIN_DSN = "postgresql+psycopg2://doctordoc:doctordoc@localhost:5432/postgres"
+TEST_DB = "doctordoc_test"
+TEST_DSN = f"postgresql+psycopg2://doctordoc:doctordoc@localhost:5432/{TEST_DB}"
+
+
+def _ensure_test_db() -> None:
+    engine = create_engine(ADMIN_DSN)
+    with engine.connect() as conn:
+        conn.execute(text("COMMIT"))
+        exists = conn.execute(text("SELECT 1 FROM pg_database WHERE datname=:n"), {"n": TEST_DB}).fetchone()
+        if not exists:
+            conn.execute(text(f'CREATE DATABASE "{TEST_DB}"'))
+    engine.dispose()
+
+
+_ensure_test_db()
+
+os.environ["DATABASE_URL"] = TEST_DSN
+os.environ["SECRET_KEY"] = "test-secret-key-not-for-production"
+os.environ["DEBUG"] = "true"
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.db import SessionLocal, get_engine
+from app.main import app
+from app.models import Base
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _schema():
+    engine = get_engine()
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    yield
+
+
+@pytest.fixture()
+def client():
+    with SessionLocal() as db:
+        db.execute(text("TRUNCATE patient, users, clinic RESTART IDENTITY CASCADE"))
+        db.commit()
+    return TestClient(app)
