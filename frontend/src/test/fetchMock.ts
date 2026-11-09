@@ -11,12 +11,17 @@ export function installFetchMock(routes: Route[]) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const full = String(input);
     const url = full.split("?")[0].replace(/^\/api/, "");
-    const candidates = routes.filter(
-      (r) => (!r.method || (init?.method ?? "GET") === r.method) && (url === r.path || url.startsWith(`${r.path}/`))
-    );
-    const route = candidates.sort((a, b) => b.path.length - a.path.length)[0];
+    const method = init?.method ?? "GET";
+    const candidates = routes.filter((r) => url === r.path || url.startsWith(`${r.path}/`));
+    const route = candidates
+      .map((r) => ({ r, methodMatch: r.method ? (r.method === method ? 2 : 0) : 1, length: r.path.length }))
+      .sort((a, b) => b.methodMatch - a.methodMatch || b.length - a.length)[0]?.r;
     if (!route) return jsonResponse({ detail: "not found" }, 404);
-    return jsonResponse(route.body ?? {}, route.status ?? 200);
+    let body = route.body;
+    if (Array.isArray(body)) {
+      body = body.length > 1 ? body.shift() : body[0];
+    }
+    return jsonResponse(body ?? {}, route.status ?? 200);
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;

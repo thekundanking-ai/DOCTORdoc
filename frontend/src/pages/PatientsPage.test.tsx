@@ -35,7 +35,7 @@ test("shows empty state when no patients exist", async () => {
     { path: "/patients", status: 200, body: { items: [], total: 0, page: 1, page_size: 10 } },
   ]);
   renderAt("/patients");
-  expect(await screen.findByText("No patients found.")).toBeInTheDocument();
+  expect(await screen.findByText("No patients yet")).toBeInTheDocument();
 });
 
 test("shows error state when the list request fails", async () => {
@@ -50,18 +50,14 @@ test("shows error state when the list request fails", async () => {
 test("search sends the query parameter to the API", async () => {
   const fetchMock = installFetchMock([
     { path: "/auth/me", status: 200, body: testUser() },
-    {
-      path: "/patients",
-      status: 200,
-      body: { items: [], total: 0, page: 1, page_size: 10 },
-    },
+    { path: "/patients", status: 200, body: { items: [], total: 0, page: 1, page_size: 10 } },
   ]);
   renderAt("/patients");
-  await screen.findByText("No patients found.");
+  await screen.findByText("No patients yet");
 
   const user = userEvent.setup();
-  await user.type(screen.getByPlaceholderText("Search by name or mobile"), "Ali");
-  await user.click(screen.getByRole("button", { name: "Search" }));
+  await user.type(screen.getByLabelText("Search patients"), "Ali");
+  await user.keyboard("{Enter}");
 
   await waitFor(() => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("q=Ali"))).toBe(true);

@@ -40,6 +40,27 @@ docker compose exec backend alembic upgrade head
 
 Protected routes redirect to `/login` when unauthenticated.
 
+## Consultations (Phase 4)
+
+- Open a patient → **New consultation** → consent confirmation → record with the browser microphone (MediaRecorder), preview, discard or upload.
+- `POST /api/consultations`, `GET /api/consultations?patient_id=`, `GET /api/consultations/{id}`, `POST /api/consultations/{id}/audio` (multipart, idempotent via `upload_id`), `GET /api/consultations/{id}/audio` (authenticated playback), `POST /api/consultations/{id}/cancel`.
+- Audio is stored in PostgreSQL (bytea) via `audio_attachment`; clinic scoping applied on every operation.
+- Unprocessed audio auto-purges after `AUDIO_RETENTION_DAYS`; deletion after processing is deferred to the Phase 5 transcription flow.
+
+## Transcription (Phase 5)
+
+- After audio is uploaded, a consultation shows an **Transcribe audio** action (requires doctor confirmation that audio will be sent to Gnani AI).
+- Gnani Prisma v3.0 Batch: create job → start → poll → download transcript. The full transcript is stored on the `transcription` row; temporary audio is deleted after the transcript is persisted.
+- `no GNANI_API_KEY` is configured, the app uses a non-billable mock provider for development. Set `GNANI_API_KEY` (backend-only) to enable the real provider.
+- Endpoints: `POST /api/consultations/{id}/transcription`, `GET /api/consultations/{id}/transcription`, `POST /api/consultations/{id}/transcription/retry`.
+
+## Reports (Phase 6)
+
+- On a completed transcription, **Generate Consultation Report** sends the transcript to Inception Mercury 3 and produces a structured draft.
+- The doctor reviews/edits sections, saves drafts, regenerates (confirm), and explicitly approves (records approver + timestamp). Approved reports are immutable.
+- No `MERCURY_API_KEY` → a non-billable mock provider is used for development. Set it (backend-only) to enable the real provider.
+- Endpoints: `POST/GET /api/consultations/{id}/report`, `PATCH /api/consultations/{id}/report`, `POST /api/consultations/{id}/report/approve`.
+
 ## Health
 
 - Backend: http://localhost:8000/health, `/health/ready`

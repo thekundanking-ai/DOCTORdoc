@@ -26,6 +26,11 @@ os.environ["DATABASE_URL"] = TEST_DSN
 os.environ["SECRET_KEY"] = "test-secret-key-not-for-production"
 os.environ["DEBUG"] = "true"
 
+# Keep tests hermetic: never use real provider keys even if present in the root .env.
+os.environ["GNANI_API_KEY"] = ""
+os.environ["MERCURY_API_KEY"] = ""
+os.environ["SMTP_HOST"] = ""
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -45,6 +50,11 @@ def _schema():
 @pytest.fixture()
 def client():
     with SessionLocal() as db:
-        db.execute(text("TRUNCATE patient, users, clinic RESTART IDENTITY CASCADE"))
+        db.execute(
+            text(
+                "TRUNCATE report_delivery, consultation_report, transcription, audio_attachment, consultation, "
+                "patient, users, clinic RESTART IDENTITY CASCADE"
+            )
+        )
         db.commit()
     return TestClient(app)

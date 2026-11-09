@@ -10,5 +10,5 @@ test("redirects unauthenticated users to the login page", async () => {
       <App />
     </MemoryRouter>
   );
-  expect(await screen.findByRole("heading", { name: "DoctorDoc Sign in" })).toBeInTheDocument();
+  expect(await screen.findByPlaceholderText("doctor@clinic.in")).toBeInTheDocument();
 });

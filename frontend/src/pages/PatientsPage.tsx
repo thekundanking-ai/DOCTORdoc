@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Button, ButtonLink } from "../components/ui/Button";
+import { Card, Badge } from "../components/ui/Card";
+import { EmptyState, ErrorState } from "../components/ui/States";
+import { Modal } from "../components/ui/Modal";
+import { Skeleton } from "../components/ui/Skeleton";
+import { useToast } from "../components/ui/Toast";
+import { PlusIcon, SearchIcon, ChevronRightIcon } from "../components/ui/icons";
 import { api, type Patient } from "../lib/api";
 
 const PAGE_SIZE = 10;
 
 export default function PatientsPage() {
+  const { push } = useToast();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -12,16 +19,13 @@ export default function PatientsPage() {
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [archiveId, setArchiveId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.patients.list({
-        q: submittedQuery || undefined,
-        page,
-        page_size: PAGE_SIZE,
-      });
+      const res = await api.patients.list({ q: submittedQuery || undefined, page, page_size: PAGE_SIZE });
       setPatients(res.data.items);
       setTotal(res.data.total);
     } catch (err) {
@@ -35,15 +39,18 @@ export default function PatientsPage() {
     void load();
   }, [load]);
 
-  function handleSearch(event: FormEvent) {
+  function onSearch(event: FormEvent) {
     event.preventDefault();
     setPage(1);
     setSubmittedQuery(query.trim());
   }
 
-  async function handleArchive(id: number) {
+  async function confirmArchive() {
+    if (archiveId === null) return;
     try {
-      await api.patients.archive(id);
+      await api.patients.archive(archiveId);
+      push("Patient archived", "info");
+      setArchiveId(null);
       void load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to archive patient");
@@ -51,87 +58,111 @@ export default function PatientsPage() {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasQuery = submittedQuery.length > 0;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Patients</h1>
-        <Link to="/patients/new" className="bg-blue-600 text-white rounded px-4 py-2">
-          New patient
-        </Link>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-ink">Patients</h1>
+          <p className="mt-1 text-sm text-ink-sub">Search, add, and open patient records.</p>
+        </div>
+        <ButtonLink to="/patients/new">
+          <PlusIcon width={18} height={18} /> Add patient
+        </ButtonLink>
       </div>
 
-      <form onSubmit={handleSearch} className="mt-4 flex gap-2">
+      <form onSubmit={onSearch} className="relative">
+        <SearchIcon width={18} height={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-faint" />
         <input
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search by name or mobile"
-          className="flex-1 border rounded p-2"
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name or mobile number"
+          className="h-11 w-full rounded-control border border-line bg-white pl-10 pr-4 text-sm text-ink placeholder:text-ink-faint outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
+          aria-label="Search patients"
         />
-        <button type="submit" className="bg-gray-800 text-white rounded px-4 py-2">
-          Search
-        </button>
       </form>
 
-      {loading && <p className="mt-6">Loading…</p>}
-      {!loading && error && <p className="mt-6 text-red-600">{error}</p>}
-      {!loading && !error && patients.length === 0 && (
-        <p className="mt-6">No patients found.</p>
-      )}
-      {!loading && !error && patients.length > 0 && (
-        <table className="mt-6 w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b">
-              <th className="py-2">Name</th>
-              <th>Mobile</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {patients.map((patient) => (
-              <tr key={patient.id} className="border-b">
-                <td className="py-2">{patient.full_name}</td>
-                <td>{patient.mobile}</td>
-                <td>{patient.is_active ? "Active" : "Archived"}</td>
-                <td className="flex gap-2">
-                  <Link to={`/patients/${patient.id}`} className="text-blue-600">
-                    View
-                  </Link>
-                  <Link to={`/patients/${patient.id}/edit`} className="text-blue-600">
-                    Edit
-                  </Link>
+      {error && <ErrorState message={error} onRetry={() => void load()} />}
+
+      {loading ? (
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <Card key={i} className="p-4">
+              <Skeleton className="h-4 w-1/3" />
+              <Skeleton className="mt-2 h-3 w-1/4" />
+            </Card>
+          ))}
+        </div>
+      ) : patients.length === 0 ? (
+        <EmptyState
+          icon={<SearchIcon width={22} height={22} />}
+          title={hasQuery ? "No patients found" : "No patients yet"}
+          description={hasQuery ? "Try a different name or mobile number." : "Add your first patient to get started."}
+          action={<ButtonLink to="/patients/new" variant="secondary"><PlusIcon width={18} height={18} /> Add patient</ButtonLink>}
+        />
+      ) : (
+        <div className="space-y-2.5">
+          {patients.map((patient) => (
+            <Card key={patient.id} className="p-4">
+              <div className="flex items-center gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-sm font-semibold text-primary">
+                  {patient.full_name.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-ink">{patient.full_name}</p>
+                  <p className="text-[13px] text-ink-sub">{patient.mobile}</p>
+                </div>
+                <Badge tone={patient.is_active ? "success" : "neutral"}>{patient.is_active ? "Active" : "Archived"}</Badge>
+                <div className="hidden items-center gap-2 sm:flex">
                   {patient.is_active && (
-                    <button onClick={() => void handleArchive(patient.id)} className="text-red-600">
+                    <Button variant="secondary" size="sm" onClick={() => setArchiveId(patient.id)}>
                       Archive
-                    </button>
+                    </Button>
                   )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <ButtonLink to={`/patients/${patient.id}`} variant="secondary" size="sm">
+                    Open <ChevronRightIcon width={15} height={15} />
+                  </ButtonLink>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2 border-t border-line pt-3 sm:hidden">
+                <ButtonLink to={`/patients/${patient.id}`} variant="secondary" size="sm" className="flex-1">
+                  Open
+                </ButtonLink>
+                {patient.is_active && (
+                  <Button variant="secondary" size="sm" className="flex-1" onClick={() => setArchiveId(patient.id)}>
+                    Archive
+                  </Button>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
 
-      <div className="mt-4 flex items-center justify-between">
-        <button
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-          disabled={page <= 1}
-          className="border rounded px-3 py-1 disabled:opacity-40"
-        >
-          Previous
-        </button>
-        <span>
-          Page {page} of {totalPages}
-        </span>
-        <button
-          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          disabled={page >= totalPages}
-          className="border rounded px-3 py-1 disabled:opacity-40"
-        >
-          Next
-        </button>
-      </div>
+      {!loading && !error && patients.length > 0 && (
+        <div className="flex items-center justify-between">
+          <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            Previous
+          </Button>
+          <span className="text-sm text-ink-sub">
+            Page {page} of {totalPages}
+          </span>
+          <Button variant="secondary" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+            Next
+          </Button>
+        </div>
+      )}
+
+      <Modal
+        open={archiveId !== null}
+        title="Archive patient?"
+        description="The patient's history is preserved, but they will not appear in active search."
+        confirmLabel="Archive"
+        tone="danger"
+        onConfirm={confirmArchive}
+        onCancel={() => setArchiveId(null)}
+      />
     </div>
   );
 }
