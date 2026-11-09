@@ -222,6 +222,52 @@ def test_retrieve_transcript_valid_document(monkeypatch):
     assert result.detected_language == "hi-IN"
 
 
+def test_retrieve_transcript_data_shape(monkeypatch):
+    """Actual documented Prisma v3 response: completed files under 'data'."""
+    provider = _make_provider(monkeypatch)
+    files_resp = httpx.Response(
+        200,
+        json={
+            "data": [
+                {
+                    "file_id": "abc",
+                    "status": "COMPLETED",
+                    "transcript_url": "https://x/transcript.json",
+                }
+            ],
+            "pagination": {"total_count": 1},
+        },
+    )
+    monkeypatch.setattr(provider, "_get", lambda path, **kw: files_resp)
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda url, timeout=60.0: httpx.Response(
+            200, json={"full_transcript": "good text", "language_code": "hi-IN", "model": "prisma-v3.0"}
+        ),
+    )
+    result = provider.retrieve_transcript("j-1")
+    assert result.transcript_text == "good text"
+    assert result.detected_language == "hi-IN"
+
+
+def test_retrieve_transcript_data_takes_priority_over_files(monkeypatch):
+    provider = _make_provider(monkeypatch)
+    files_resp = httpx.Response(
+        200,
+        json={
+            "data": [{"status": "COMPLETED", "transcript_url": "https://x/data.json"}],
+            "files": [{"transcript_url": "https://x/files.json"}],
+        },
+    )
+    monkeypatch.setattr(provider, "_get", lambda path, **kw: files_resp)
+    monkeypatch.setattr(
+        httpx, "get", lambda url, timeout=60.0: httpx.Response(200, json={"full_transcript": "from data"})
+    )
+    result = provider.retrieve_transcript("j-1")
+    assert result.transcript_text == "from data"
+
+
 def test_retrieve_transcript_bare_list_shape(monkeypatch):
     provider = _make_provider(monkeypatch)
     files_resp = httpx.Response(200, json=[{"transcript_url": "https://x/t.json"}])
@@ -231,6 +277,35 @@ def test_retrieve_transcript_bare_list_shape(monkeypatch):
     )
     result = provider.retrieve_transcript("j-1")
     assert result.transcript_text == "text"
+
+
+def test_retrieve_transcript_data_empty_raises_no_transcript(monkeypatch):
+    provider = _make_provider(monkeypatch)
+    for payload in ({"data": []}, {"data": None}, {"data": "nope"}):
+        resp = httpx.Response(200, json=payload)
+        monkeypatch.setattr(provider, "_get", lambda path, **kw: resp)
+        with pytest.raises(ProviderError) as ei:
+            provider.retrieve_transcript("j-1")
+        assert ei.value.code == "NO_TRANSCRIPT"
+
+
+def test_retrieve_transcript_data_missing_url_is_malformed(monkeypatch):
+    provider = _make_provider(monkeypatch)
+    files_resp = httpx.Response(200, json={"data": [{"file_id": "x", "status": "COMPLETED"}]})
+    monkeypatch.setattr(provider, "_get", lambda path, **kw: files_resp)
+    with pytest.raises(ProviderError) as ei:
+        provider.retrieve_transcript("j-1")
+    assert ei.value.code == "NO_TRANSCRIPT_URL"
+
+
+def test_retrieve_transcript_malformed_files_response(monkeypatch):
+    provider = _make_provider(monkeypatch)
+    for payload in (None, 42, {"data": [{"transcript_url": 123}]}):
+        resp = httpx.Response(200, json=payload)
+        monkeypatch.setattr(provider, "_get", lambda path, **kw: resp)
+        with pytest.raises(ProviderError) as ei:
+            provider.retrieve_transcript("j-1")
+        assert ei.value.code in ("NO_TRANSCRIPT", "NO_TRANSCRIPT_URL")
 
 
 def test_retrieve_transcript_empty_files_raises_no_transcript(monkeypatch):

@@ -116,7 +116,11 @@ def _mark_failed(db: Session, transcription: Transcription, code: str, message: 
 
 
 def _run_turn(db: Session, transcription: Transcription) -> None:
-    provider = get_provider()
+    try:
+        provider = get_provider()
+    except Exception:
+        _mark_failed(db, transcription, "PROVIDER_NOT_CONFIGURED", "Speech-to-text provider is not configured.")
+        return
 
     if _timed_out(transcription):
         _mark_failed(db, transcription, "PROCESSING_TIMEOUT", "Transcription exceeded the maximum allowed time.")

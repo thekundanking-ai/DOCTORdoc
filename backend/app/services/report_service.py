@@ -91,7 +91,10 @@ def generate_report(db: Session, consultation_id: int, user: User, provider=None
         "consultation_date": consultation.started_at.isoformat() if consultation.started_at else None,
     }
 
-    provider = provider or get_report_provider()
+    try:
+        provider = provider or get_report_provider()
+    except ReportProviderError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Report provider is not configured.")
     existing = _get_report(db, consultation_id)
 
     if existing is not None:
@@ -221,7 +224,20 @@ def deliver_report(db: Session, consultation_id: int, user: User) -> ReportDeliv
 
     pdf_bytes = build_report_pdf(report, patient, consultation)
     recipient = patient.mobile if patient else None
-    provider = get_delivery_provider()
+    try:
+        provider = get_delivery_provider()
+    except Exception as exc:
+        delivery = ReportDelivery(
+            report_id=report.id,
+            clinic_id=user.clinic_id,
+            channel="sms",
+            status=DeliveryStatus.failed.value,
+            error_message=getattr(exc, "message", None) or "Delivery provider is not configured.",
+        )
+        db.add(delivery)
+        db.commit()
+        db.refresh(delivery)
+        return delivery
 
     try:
         result = provider.send(

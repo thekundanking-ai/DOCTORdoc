@@ -36,6 +36,4 @@ htmlcov/
 *.tfstate
 *.tfstate.*
 *.tfvars
-
-# TypeScript incremental build cache
 **/tsconfig.tsbuildinfo

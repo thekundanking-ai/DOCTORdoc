@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     mercury_timeout_seconds: float = 60.0
 
     delivery_provider: str = "mock"
+    # Explicitly permit mock providers in a non-debug environment (dev/tests).
+    # When DEBUG=true, mocks are always allowed. In production, this flag is
+    # the only way to opt into mocks without setting a real provider key.
+    allow_mock_providers: bool = False
 
     smtp_host: str | None = None
     smtp_port: int = 587
@@ -63,6 +67,9 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
 
     _secret = None
+
+    def mock_providers_allowed(self) -> bool:
+        return bool(self.debug or self.allow_mock_providers)
 
     def resolve_secret_key(self) -> str:
         if self._secret:

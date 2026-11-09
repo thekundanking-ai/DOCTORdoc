@@ -192,8 +192,8 @@ class GnaniPrismaV3Provider(SpeechToTextProvider):
             raise ProviderError("NO_TRANSCRIPT", "The provider returned no completed transcript files.", retryable=True)
 
         transcript_url = records[0].get("transcript_url")
-        if not transcript_url:
-            raise ProviderError("NO_TRANSCRIPT_URL", "The provider transcript file has no URL.", retryable=True)
+        if not isinstance(transcript_url, str) or not transcript_url.strip():
+            raise ProviderError("NO_TRANSCRIPT_URL", "The provider transcript file has no usable URL.", retryable=True)
 
         # H2: The transcript URL is downloaded WITHOUT auth headers. Whether
         # Gnani requires the API key for this download is unresolved (insufficient
@@ -228,20 +228,23 @@ class GnaniPrismaV3Provider(SpeechToTextProvider):
     def _extract_file_records(resp: httpx.Response) -> list:
         """Return the completed-file records from the provider /files response.
 
-        Only documented structures are parsed: a bare JSON array, or an object
-        whose "files" key holds the array. Anything else is treated as empty/
-        malformed (=> an empty record list). Response contents are never logged.
+        Supported shapes, in priority order:
+          1. {"data": [ ... ]}          (current documented Prisma v3 shape)
+          2. {"files": [ ... ]}         (earlier shape)
+          3. [ ... ]                    (bare array)
+        Anything else is treated as empty/malformed (=> an empty record list).
+        Response contents are never logged.
         """
         try:
             body = resp.json()
         except Exception:
             return []
-        if isinstance(body, list):
-            records = body
-        elif isinstance(body, dict):
-            records = body.get("files")
-            if not isinstance(records, list):
-                return []
-        else:
+        if isinstance(body, dict):
+            for key in ("data", "files"):
+                records = body.get(key)
+                if isinstance(records, list):
+                    return [record for record in records if isinstance(record, dict)]
             return []
-        return [record for record in records if isinstance(record, dict)]
+        if isinstance(body, list):
+            return [record for record in body if isinstance(record, dict)]
+        return []
