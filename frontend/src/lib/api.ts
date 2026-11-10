@@ -21,8 +21,14 @@ function extractError(data: any, status: number): string {
 
 type ApiResult<T> = { ok: true; data: T };
 
+const baseURL = import.meta.env.VITE_API_BASE_URL || "";
+
+function apiUrl(path: string): string {
+  return `${baseURL}/api${path}`;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(apiUrl(path), {
     ...init,
     headers: { "Content-Type": "application/json", ...init.headers },
     credentials: "include",
@@ -141,7 +147,7 @@ export type Transcription = {
 };
 
 async function rawFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api${path}`, { ...init, credentials: "include" });
+  const response = await fetch(apiUrl(path), { ...init, credentials: "include" });
   let data: any = null;
   try {
     data = await response.json();
@@ -259,7 +265,7 @@ export const api = {
       return rawFetch<AudioAttachment>(`/consultations/${id}/audio`, { method: "POST", body: form });
     },
     fetchAudioBlob: async (id: number): Promise<Blob> => {
-      const response = await fetch(`/api/consultations/${id}/audio`, { credentials: "include" });
+      const response = await fetch(apiUrl(`/consultations/${id}/audio`), { credentials: "include" });
       if (!response.ok) {
         let data: any = null;
         try {
@@ -288,7 +294,7 @@ export const api = {
     approve: (consultationId: number) =>
       request<Report>(`/consultations/${consultationId}/report/approve`, { method: "POST" }),
     downloadPdf: async (consultationId: number): Promise<Blob> => {
-      const response = await fetch(`/api/consultations/${consultationId}/report/pdf`, { credentials: "include" });
+      const response = await fetch(apiUrl(`/consultations/${consultationId}/report/pdf`), { credentials: "include" });
       if (!response.ok) {
         let data: any = null;
         try {
