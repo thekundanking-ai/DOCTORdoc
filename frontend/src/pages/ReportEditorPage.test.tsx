@@ -124,3 +124,50 @@ test("show failed state and allows retry generation", async () => {
   expect(await screen.findByDisplayValue("Fever and sore throat")).toBeInTheDocument();
   expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true);
 });
+
+
+test("sends approved report, disables button, and shows delivery history", async () => {
+  const approvedReport = { ...DRAFT_REPORT, status: "approved", approved_by: 1, approved_at: "2026-11-06T00:10:00Z" };
+  const delivery = {
+    id: 1, report_id: 1, clinic_id: 1, channel: "email", status: "sent",
+    recipient: "patient@example.com", error_message: null,
+    delivered_at: "2026-11-06T00:11:00Z", created_at: "2026-11-06T00:11:00Z",
+  };
+  installFetchMock([
+    { path: `/consultations/${CONSULTATION}/report`, status: 200, body: approvedReport },
+    { path: `/consultations/${CONSULTATION}/report/deliver`, method: "POST", status: 200, body: delivery },
+    { path: `/consultations/${CONSULTATION}/report/deliveries`, status: 200, body: [[], [delivery]] },
+  ]);
+  renderPage();
+
+  await screen.findByText(/Approved by user #1/);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Send Report" }));
+
+  expect(await screen.findByText("Report sent to patient")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Report sent" })).toBeDisabled();
+  expect(await screen.findByText(/Sent via SMTP/)).toBeInTheDocument();
+  expect(screen.getByText(/Recipient: patient@example.com/)).toBeInTheDocument();
+});
+
+test("shows safe failure feedback and allows retry", async () => {
+  const approvedReport = { ...DRAFT_REPORT, status: "approved", approved_by: 1, approved_at: "2026-11-06T00:10:00Z" };
+  const failedDelivery = {
+    id: 2, report_id: 1, clinic_id: 1, channel: "email", status: "failed",
+    recipient: "patient@example.com", error_message: "SMTP error: Connection refused",
+    delivered_at: null, created_at: "2026-11-06T00:12:00Z",
+  };
+  installFetchMock([
+    { path: `/consultations/${CONSULTATION}/report`, status: 200, body: approvedReport },
+    { path: `/consultations/${CONSULTATION}/report/deliver`, method: "POST", status: 200, body: failedDelivery },
+    { path: `/consultations/${CONSULTATION}/report/deliveries`, status: 200, body: [[], [failedDelivery]] },
+  ]);
+  renderPage();
+
+  await screen.findByText(/Approved by user #1/);
+  await userEvent.setup().click(screen.getByRole("button", { name: "Send Report" }));
+
+  expect(await screen.findByText("Delivery failed")).toBeInTheDocument();
+  expect(await screen.findByText(/Connection refused/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Send Report" })).not.toBeDisabled();
+});

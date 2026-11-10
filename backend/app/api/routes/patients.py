@@ -13,11 +13,13 @@ from app.models import Patient, User
 router = APIRouter()
 
 MOBILE_PATTERN = re.compile(r"^\+?[0-9]{7,15}$")
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class PatientCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     mobile: str
+    email: str | None = None
 
     @field_validator("full_name")
     @classmethod
@@ -35,10 +37,23 @@ class PatientCreate(BaseModel):
             raise ValueError("invalid mobile number")
         return value
 
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            return None
+        if not EMAIL_PATTERN.match(value):
+            raise ValueError("invalid email address")
+        return value.lower()
+
 
 class PatientUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
     mobile: str | None = None
+    email: str | None = None
     is_active: bool | None = None
 
     @field_validator("full_name")
@@ -61,6 +76,18 @@ class PatientUpdate(BaseModel):
             raise ValueError("invalid mobile number")
         return value
 
+    @field_validator("email")
+    @classmethod
+    def _validate_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value:
+            return None
+        if not EMAIL_PATTERN.match(value):
+            raise ValueError("invalid email address")
+        return value.lower()
+
 
 class PatientOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -69,6 +96,7 @@ class PatientOut(BaseModel):
     clinic_id: int
     full_name: str
     mobile: str
+    email: str | None = None
     is_active: bool
     created_by: int
     created_at: object
@@ -121,6 +149,7 @@ def create_patient(
         full_name=payload.full_name,
         mobile=payload.mobile,
         mobile_normalized=mobile_normalized,
+        email=payload.email,
         created_by=user.id,
     )
     db.add(patient)
@@ -190,6 +219,8 @@ def update_patient(
     if payload.mobile is not None:
         patient.mobile = payload.mobile
         patient.mobile_normalized = _normalize_mobile(payload.mobile)
+    if payload.email is not None:
+        patient.email = payload.email
     if payload.is_active is not None:
         patient.is_active = payload.is_active
 
@@ -216,3 +247,9 @@ def archive_patient(
     db.commit()
     db.refresh(patient)
     return patient
+
+
+
+
+
+

@@ -32,6 +32,11 @@ LOCAL_ACTIVE = {TranscriptionStatus.submitting.value, TranscriptionStatus.proces
 MAX_BACKOFF_SECONDS = 300
 _POLL_RETRY_JITTER = (0.8, 1.2)
 
+_ACTIVE_STALL_WINDOW = 6
+# Consecutive non-terminal provider polls per transcription id, used to escalate
+# the poll interval for long-stalled jobs (see _active_poll_interval).
+_active_stall_counts: dict[int, int] = {}
+
 
 def _now():
     return datetime.now(timezone.utc)
@@ -46,6 +51,21 @@ def _backoff(retry_after: int | None, attempt: int) -> int:
     jitter = random.uniform(*_POLL_RETRY_JITTER)
     seconds = int(base * jitter)
     return max(settings.gnani_poll_interval_seconds, min(seconds, MAX_BACKOFF_SECONDS))
+
+
+def _active_poll_interval(transcription_id: int) -> int:
+    """Poll interval for a job still in a non-terminal provider status.
+
+    Keep the base cadence early, then escalate geometrically (2x per window of
+    stale polls) up to gnani_poll_max_interval_seconds. This bounds the aggregate
+    request rate when several jobs are queued concurrently and avoids
+    self-inflicted 429 responses while the provider is slow to dequeue.
+    """
+    stall = _active_stall_counts.get(transcription_id, 0) + 1
+    _active_stall_counts[transcription_id] = stall
+    step = stall // _ACTIVE_STALL_WINDOW
+    interval = settings.gnani_poll_interval_seconds * (2 ** step)
+    return max(settings.gnani_poll_interval_seconds, min(interval, settings.gnani_poll_max_interval_seconds))
 
 
 def _deadline(transcription: Transcription) -> datetime:
@@ -96,6 +116,9 @@ def _claim_next(db: Session) -> Transcription | None:
 
 def _schedule_transient(db: Session, transcription: Transcription, retry_after: int | None) -> None:
     """Persist a bounded, transient poll/retry wait (does NOT mark failed)."""
+    if _timed_out(transcription):
+        _mark_failed(db, transcription, "PROCESSING_TIMEOUT", "Transcription exceeded its deadline.")
+        return
     transcription.retry_count += 1
     transcription.next_retry_at = _now() + timedelta(seconds=_backoff(retry_after, transcription.retry_count))
     transcription.processing_started_at = None
@@ -104,6 +127,7 @@ def _schedule_transient(db: Session, transcription: Transcription, retry_after: 
 
 def _mark_failed(db: Session, transcription: Transcription, code: str, message: str) -> None:
     """Permanent failure: stop reprocessing permanently."""
+    _active_stall_counts.pop(transcription.id, None)
     db.rollback()
     transcription.status = TranscriptionStatus.failed.value
     transcription.error_code = code
@@ -217,7 +241,7 @@ def _run_turn(db: Session, transcription: Transcription) -> None:
         return
 
     if status in PROVIDER_ACTIVE or status not in PROVIDER_TERMINAL:
-        transcription.next_retry_at = _now() + timedelta(seconds=settings.gnani_poll_interval_seconds)
+        transcription.next_retry_at = _now() + timedelta(seconds=_active_poll_interval(transcription.id))
         db.commit()
         return
 
@@ -254,6 +278,7 @@ def _run_turn(db: Session, transcription: Transcription) -> None:
         transcription.processing_started_at = None
         transcription.retry_count = 0
         transcription.next_retry_at = None
+        _active_stall_counts.pop(transcription.id, None)
         db.commit()
         _delete_audio_after_success(db, audio)
         consultation = db.get(Consultation, transcription.consultation_id)

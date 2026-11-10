@@ -4,17 +4,18 @@ from app.core.delivery.smtp import SmtpDeliveryProvider
 from app.core.config import settings
 
 
-def get_delivery_provider() -> DeliveryProvider:
+def get_delivery_provider(sender: str | None = None) -> DeliveryProvider:
     # Real SMTP is used ONLY when explicitly configured. Otherwise mock is used
     # only for dev/tests (DEBUG) or when explicitly opted in.
-    if settings.smtp_host and settings.smtp_user and settings.smtp_password:
+    if settings.smtp_host and settings.smtp_username and settings.smtp_password:
         return SmtpDeliveryProvider(
             host=settings.smtp_host,
             port=settings.smtp_port,
-            user=settings.smtp_user,
+            user=settings.smtp_username,
             password=settings.smtp_password,
-            sender=settings.smtp_from or settings.smtp_user,
-            starttls=settings.smtp_starttls,
+            sender=sender or settings.smtp_from_email or settings.smtp_username,
+            sender_name=settings.smtp_from_name,
+            starttls=settings.smtp_use_tls,
         )
     if settings.mock_providers_allowed():
         return MockDeliveryProvider()

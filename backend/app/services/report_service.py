@@ -9,6 +9,7 @@ from app.core.ai import get_report_provider
 from app.core.ai.base import ReportProviderError
 from app.core.delivery import get_delivery_provider
 from app.models import (
+    Clinic,
     Consultation,
     ConsultationReport,
     DeliveryStatus,
@@ -50,12 +51,12 @@ def _apply_guardrails(structured: dict, transcript: str) -> dict:
     diagnosis = structured.get("diagnosis")
     if diagnosis and not _mentions(transcript, diagnosis):
         structured["diagnosis"] = None
-        uncertain.append("Diagnosis was not found in the transcript — confirm before using.")
+        uncertain.append("Diagnosis was not found in the transcript â€” confirm before using.")
 
     for med in structured.get("medications") or []:
         name = med.get("name")
         if name and not _mentions(transcript, name):
-            uncertain.append(f"Medication '{name}' not found in the transcript — confirm the prescription.")
+            uncertain.append(f"Medication '{name}' not found in the transcript â€” confirm the prescription.")
 
     structured["unclear_or_missing"] = uncertain
     return structured
@@ -222,26 +223,49 @@ def deliver_report(db: Session, consultation_id: int, user: User) -> ReportDeliv
     consultation = db.get(Consultation, report.consultation_id)
     patient = db.get(Patient, report.patient_id)
 
+    if patient is None or not patient.email:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Patient has no email address on file; add one before sending the report.",
+        )
+
+    existing_sent = db.scalar(
+        select(ReportDelivery).where(
+            ReportDelivery.report_id == report.id,
+            ReportDelivery.status == DeliveryStatus.sent.value,
+        )
+    )
+    if existing_sent is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Report has already been delivered to the patient.",
+        )
+
     pdf_bytes = build_report_pdf(report, patient, consultation)
-    recipient = patient.mobile if patient else None
+    recipient = patient.email
+
     try:
-        provider = get_delivery_provider()
+        clinic = db.get(Clinic, user.clinic_id)
+        sender = clinic.sender_email if clinic and clinic.sender_email else None
+        provider = get_delivery_provider(sender=sender) if sender else get_delivery_provider()
     except Exception as exc:
         delivery = ReportDelivery(
             report_id=report.id,
             clinic_id=user.clinic_id,
-            channel="sms",
+            channel="email",
             status=DeliveryStatus.failed.value,
             error_message=getattr(exc, "message", None) or "Delivery provider is not configured.",
         )
+        delivery.recipient = patient.email
         db.add(delivery)
         db.commit()
         db.refresh(delivery)
         return delivery
 
+    result = None
     try:
         result = provider.send(
-            recipient=recipient or "unknown",
+            recipient=recipient,
             subject=f"Consultation report #{consultation_id}",
             payload_bytes=pdf_bytes,
             payload_type="application/pdf",
@@ -253,8 +277,9 @@ def deliver_report(db: Session, consultation_id: int, user: User) -> ReportDeliv
     delivery = ReportDelivery(
         report_id=report.id,
         clinic_id=user.clinic_id,
-        channel="sms",
+        channel="email",
     )
+    delivery.recipient = recipient
     if result and result.status == "sent":
         delivery.status = DeliveryStatus.sent.value
         delivery.delivered_at = datetime.now(timezone.utc)

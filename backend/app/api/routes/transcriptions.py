@@ -91,18 +91,25 @@ def start_transcription(
         )
 
     try:
-        provider_name = type(get_provider()).__name__
+        provider = get_provider()
+        provider_name = type(provider).__name__
+        provider_model = getattr(provider, "provider_model", settings.gnani_stt_model)
+        language_code = getattr(provider, "language_code", settings.gnani_language_code)
+        provider_format = getattr(provider, "format", settings.gnani_stt_format)
     except Exception:
         provider_name = "unknown"
+        provider_model = settings.gnani_stt_model
+        language_code = settings.gnani_language_code
+        provider_format = settings.gnani_stt_format
 
     transcription = Transcription(
         consultation_id=consultation_id,
         clinic_id=user.clinic_id,
         provider=provider_name,
-        provider_model=settings.gnani_stt_model,
+        provider_model=provider_model,
         status=TranscriptionStatus.submitting.value,
-        language_code=settings.gnani_language_code,
-        format=settings.gnani_stt_format,
+        language_code=language_code,
+        format=provider_format,
     )
     db.add(transcription)
     db.commit()

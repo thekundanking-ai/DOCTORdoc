@@ -31,6 +31,10 @@ os.environ["GNANI_API_KEY"] = ""
 os.environ["MERCURY_API_KEY"] = ""
 os.environ["SMTP_HOST"] = ""
 
+# Lift in-process auth rate limits so tests can run many requests.
+os.environ["RATE_LIMIT_LOGIN"] = "100000"
+os.environ["RATE_LIMIT_REGISTER"] = "100000"
+
 import pytest
 from fastapi.testclient import TestClient
 

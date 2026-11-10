@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type Transcription, type TranscriptionStatus } from "../lib/api";
 
@@ -23,9 +23,10 @@ type Props = {
   consultationId: number;
   hasAudio: boolean;
   patientId: number;
+  onTerminal?: () => void;
 };
 
-export default function TranscriptionPanel({ consultationId, hasAudio, patientId }: Props) {
+export default function TranscriptionPanel({ consultationId, hasAudio, patientId, onTerminal }: Props) {
   const navigate = useNavigate();
   const [transcription, setTranscription] = useState<Transcription | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +55,20 @@ export default function TranscriptionPanel({ consultationId, hasAudio, patientId
     const interval = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(interval);
   }, [activeStatus, refresh]);
+
+  const terminalNotified = useRef(false);
+  useEffect(() => {
+    if (!transcription?.status) return;
+    const status = transcription.status;
+    if (status === "completed" || status === "failed") {
+      if (!terminalNotified.current) {
+        terminalNotified.current = true;
+        onTerminal?.();
+      }
+    } else {
+      terminalNotified.current = false;
+    }
+  }, [transcription?.status, onTerminal]);
 
   async function confirmStart() {
     setCreating(true);

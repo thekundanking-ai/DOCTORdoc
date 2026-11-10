@@ -26,6 +26,7 @@ def _create_user(email: str, password: str, role: str, clinic_id: int) -> User:
             full_name="Clinician",
             role=role,
             clinic_id=clinic_id,
+            email_verified=True,
         )
         db.add(user)
         db.commit()

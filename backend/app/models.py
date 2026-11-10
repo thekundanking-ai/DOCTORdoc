@@ -22,6 +22,8 @@ class Clinic(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Verified clinic-owner Gmail used as the per-clinic SMTP sender.
+    sender_email: Mapped[str | None] = mapped_column(String(255))
 
     users: Mapped[list["User"]] = relationship(back_populates="clinic")
 
@@ -35,6 +37,9 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default=Role.staff.value)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    verification_token_hash: Mapped[str | None] = mapped_column(String(128))
+    verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     clinic_id: Mapped[int] = mapped_column(ForeignKey("clinic.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -49,6 +54,7 @@ class Patient(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     mobile: Mapped[str] = mapped_column(String(50), nullable=False)
     mobile_normalized: Mapped[str] = mapped_column(String(20), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

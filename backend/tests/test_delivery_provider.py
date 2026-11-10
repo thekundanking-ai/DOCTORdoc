@@ -11,10 +11,22 @@ def test_default_provider_is_mock(monkeypatch):
 
 def test_smtp_selected_when_configured(monkeypatch):
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
-    monkeypatch.setattr(settings, "smtp_user", "u")
+    monkeypatch.setattr(settings, "smtp_username", "u")
     monkeypatch.setattr(settings, "smtp_password", "p")
-    monkeypatch.setattr(settings, "smtp_from", "from@example.com")
-    assert isinstance(get_delivery_provider(), SmtpDeliveryProvider)
+    monkeypatch.setattr(settings, "smtp_from_email", "from@example.com")
+    monkeypatch.setattr(settings, "smtp_from_name", "Clinic")
+    monkeypatch.setattr(settings, "smtp_use_tls", True)
+    provider = get_delivery_provider()
+    assert isinstance(provider, SmtpDeliveryProvider)
+    assert provider.sender == "from@example.com"
+    assert provider.sender_name == "Clinic"
+
+
+def test_smtp_not_selected_when_missing_credentials(monkeypatch):
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "smtp_username", None)
+    monkeypatch.setattr(settings, "smtp_password", None)
+    assert isinstance(get_delivery_provider(), MockDeliveryProvider)
 
 
 def test_smtp_returns_failed_without_sending_secrets(monkeypatch):

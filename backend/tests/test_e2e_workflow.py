@@ -42,7 +42,7 @@ def test_full_mock_workflow(client, monkeypatch):
 
     # 2. create patient
     patient_id = client.post(
-        "/patients", json={"full_name": "E2E Patient", "mobile": f"+1888{random.randint(100000,999999)}"}
+        "/patients", json={"full_name": "E2E Patient", "mobile": f"+1888{random.randint(100000,999999)}", "email": "e2e@example.com"}
     ).json()["id"]
 
     # 3. consultation + audio
@@ -101,3 +101,4 @@ def test_full_mock_workflow(client, monkeypatch):
     report = client.get(f"/consultations/{consultation_id}/report").json()
     assert report["status"] == "approved"
     assert report["structured_report"]
+

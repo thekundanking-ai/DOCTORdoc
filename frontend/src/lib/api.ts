@@ -6,6 +6,19 @@ export type User = {
   clinic_id: number;
 };
 
+
+function extractError(data: any, status: number): string {
+  const detail = data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((d: any) => (typeof d?.msg === "string" ? d.msg.replace(/^Value error,\s*/, "") : ""))
+      .filter(Boolean);
+    if (parts.length) return parts.join("; ");
+  }
+  return `Request failed (${status})`;
+}
+
 type ApiResult<T> = { ok: true; data: T };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
@@ -23,8 +36,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResu
   }
 
   if (!response.ok) {
-    const message = data?.detail || `Request failed (${response.status})`;
-    throw new Error(message);
+    throw new Error(extractError(data, response.status));
   }
   return { ok: true, data };
 }
@@ -34,6 +46,7 @@ export type Patient = {
   clinic_id: number;
   full_name: string;
   mobile: string;
+  email?: string | null;
   is_active: boolean;
   created_by: number;
   created_at: string;
@@ -47,7 +60,7 @@ export type PatientListResult = {
   page_size: number;
 };
 
-export type PatientInput = { full_name: string; mobile: string };
+export type PatientInput = { full_name: string; mobile: string; email?: string | null };
 export type PatientPatch = Partial<PatientInput> & { is_active?: boolean };
 
 export type PatientListParams = {
@@ -136,7 +149,7 @@ async function rawFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     /* empty body */
   }
   if (!response.ok) {
-    throw new Error(data?.detail || `Request failed (${response.status})`);
+    throw new Error(extractError(data, response.status));
   }
   return data as T;
 }
@@ -187,9 +200,29 @@ export type Delivery = {
   clinic_id: number;
   channel: string;
   status: "pending" | "sent" | "failed";
+  recipient?: string | null;
   error_message: string | null;
   delivered_at: string | null;
   created_at: string;
+};
+
+
+
+export type RegisterInput = {
+  full_name: string;
+  clinic_name: string;
+  email: string;
+  password: string;
+  confirm_password: string;
+};
+
+export type RegisterResult = {
+  id: number;
+  email: string;
+  full_name: string;
+  role: string;
+  clinic_id: number;
+  dev_verification_token?: string | null;
 };
 
 export const api = {
@@ -197,6 +230,12 @@ export const api = {
   login: (email: string, password: string) =>
     request<User>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  register: (data: RegisterInput) => request<RegisterResult>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(data),
+  }),
+  verifyEmail: (token: string) =>
+    request<{ ok: boolean }>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) }),
   patients: {
     list: (params: PatientListParams = {}) => request<PatientListResult>(`/patients${querystring(params)}`),
     get: (id: number) => request<Patient>(`/patients/${id}`),
@@ -263,5 +302,9 @@ export const api = {
     },
     deliver: (consultationId: number) =>
       request<Delivery>(`/consultations/${consultationId}/report/deliver`, { method: "POST" }),
+    deliveries: (consultationId: number) =>
+      request<Delivery[]>(`/consultations/${consultationId}/report/deliveries`),
   },
 };
+
+

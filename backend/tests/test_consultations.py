@@ -62,6 +62,7 @@ def _create_other_clinic_user() -> dict:
             full_name="Other Staff",
             role="staff",
             clinic_id=clinic.id,
+            email_verified=True,
         )
         db.add(user)
         db.commit()

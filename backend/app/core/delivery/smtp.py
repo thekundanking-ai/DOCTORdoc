@@ -10,22 +10,48 @@ class SmtpDeliveryProvider(DeliveryProvider):
     NOTE: sends real email. Must never be called without explicit authorization.
     """
 
-    def __init__(self, host: str, port: int, user: str, password: str, sender: str, starttls: bool = True):
+    def __init__(self, host: str, port: int, user: str, password: str, sender: str, sender_name: str | None = None, starttls: bool = True):
         self.host = host
         self.port = port
         self.user = user
         self.password = password
         self.sender = sender
+        self.sender_name = sender_name
         self.starttls = starttls
+
+
+    def send_text(self, recipient: str, subject: str, body: str) -> None:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        if self.sender_name:
+            msg["From"] = f"{self.sender_name} <{self.sender}>"
+        else:
+            msg["From"] = self.sender
+        msg["To"] = recipient
+        msg.set_content(body)
+        with smtplib.SMTP(self.host, self.port, timeout=30) as smtp:
+            if self.starttls:
+                smtp.starttls()
+            if self.user:
+                smtp.login(self.user, self.password)
+            smtp.send_message(msg)
 
     def send(self, recipient, subject, payload_bytes, payload_type, meta) -> DeliveryResult:
         try:
             msg = EmailMessage()
             msg["Subject"] = subject
-            msg["From"] = self.sender
+            if self.sender_name:
+                msg["From"] = f"{self.sender_name} <{self.sender}>"
+            else:
+                msg["From"] = self.sender
             msg["To"] = recipient
             msg.set_content("Your DoctorDoc consultation report is attached.")
-            msg.add_attachment(payload_bytes, maintype="application", subtype="pdf", filename=f"report-{meta.get('consultation_id')}.pdf")
+            msg.add_attachment(
+                payload_bytes,
+                maintype="application",
+                subtype="pdf",
+                filename=f"report-{meta.get('consultation_id')}.pdf",
+            )
 
             with smtplib.SMTP(self.host, self.port, timeout=30) as smtp:
                 if self.starttls:

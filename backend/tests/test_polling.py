@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from app.core.config import settings
 from app.core.stt.base import ProviderError, TranscriptResult
-from app.core.transcription_worker import process_pending
+from app.core.transcription_worker import (_active_poll_interval, _active_stall_counts, process_pending)
 from app.db import SessionLocal
 from app.models import Transcription
 
@@ -292,3 +292,47 @@ def test_first_poll_delay_uses_configured_interval(client, monkeypatch):
         assert transcription.status == "processing"
         wait = (transcription.next_retry_at - datetime.now(timezone.utc)).total_seconds()
         assert wait >= 24.0  # authoritative configured interval is used
+
+class QueuedProvider(StubProvider):
+    def get_status(self, job_id):
+        self.polls += 1
+        return "QUEUED"
+
+
+def test_active_poll_interval_helper_escalation_bounded(monkeypatch):
+    monkeypatch.setattr(settings, "gnani_poll_interval_seconds", 10)
+    monkeypatch.setattr(settings, "gnani_poll_max_interval_seconds", 30)
+    tid = 999001
+    seq = [_active_poll_interval(tid) for _ in range(14)]
+    assert seq[0] == 10
+    assert seq[4] == 10
+    assert seq[5] == 20  # 6th consecutive active poll escalates
+    assert seq[10] == 20
+    assert seq[11] == 30  # capped at max interval
+    assert seq[13] == 30
+    assert all(a <= b for a, b in zip(seq, seq[1:]))
+    assert min(seq) >= settings.gnani_poll_interval_seconds
+    _active_stall_counts.pop(tid, None)
+
+
+def test_active_poll_interval_escalates_for_stalled_job(client, monkeypatch):
+    stub = QueuedProvider()
+    monkeypatch.setattr("app.core.transcription_worker.get_provider", lambda: stub)
+    _bootstrap(client)
+    _login(client)
+    consultation_id = _seed_processing_transcription(client)
+    waits = []
+    for _ in range(7):
+        with SessionLocal() as db:
+            tx = db.query(Transcription).filter(Transcription.consultation_id == consultation_id).one()
+            tx.next_retry_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+            db.commit()
+        assert process_pending() == 1
+        with SessionLocal() as db:
+            tx = db.query(Transcription).filter(Transcription.consultation_id == consultation_id).one()
+            waits.append((tx.next_retry_at - datetime.now(timezone.utc)).total_seconds())
+    assert waits[0] >= 9.0
+    assert waits[0] < 15.0
+    assert waits[5] >= 19.0  # escalated to ~20s after stall window
+    assert waits[5] <= 31.0  # bounded cap
+    assert stub.polls == 7

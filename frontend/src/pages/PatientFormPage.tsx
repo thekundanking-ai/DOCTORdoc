@@ -8,6 +8,7 @@ import { useToast } from "../components/ui/Toast";
 import { api } from "../lib/api";
 
 const MOBILE_RE = /^\+?[0-9]{7,15}$/;
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export default function PatientFormPage() {
   const { id } = useParams();
@@ -17,9 +18,10 @@ export default function PatientFormPage() {
 
   const [name, setName] = useState("");
   const [mobile, setMobile] = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(isEdit);
   const [busy, setBusy] = useState(false);
-  const [errors, setErrors] = useState<{ name?: string; mobile?: string; server?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; mobile?: string; email?: string; server?: string }>({});
 
   useEffect(() => {
     if (!isEdit) return;
@@ -28,6 +30,7 @@ export default function PatientFormPage() {
       .then((res) => {
         setName(res.data.full_name);
         setMobile(res.data.mobile);
+        setEmail(res.data.email ?? "");
       })
       .catch((err) => setErrors({ server: err instanceof Error ? err.message : "Failed to load patient" }))
       .finally(() => setLoading(false));
@@ -39,17 +42,19 @@ export default function PatientFormPage() {
     if (!name.trim() || name.trim().length < 2) next.name = "Enter the patient's full name.";
     const mob = mobile.replace(/\s+/g, "");
     if (!MOBILE_RE.test(mob)) next.mobile = "Enter a valid mobile number (7–15 digits).";
+    const em = (email || "").trim();
+    if (em && !EMAIL_RE.test(em)) next.email = "Enter a valid email address (or leave blank).";
     setErrors(next);
     if (Object.keys(next).length > 0) return;
 
     setBusy(true);
     try {
       if (isEdit) {
-        await api.patients.update(Number(id), { full_name: name.trim(), mobile: mobile.trim() });
+        await api.patients.update(Number(id), { full_name: name.trim(), mobile: mob, email: em || null });
         push("Patient updated");
         navigate(`/patients/${id}`);
       } else {
-        const patient = await api.patients.create({ full_name: name.trim(), mobile: mobile.trim() });
+        const patient = await api.patients.create({ full_name: name.trim(), mobile: mob, email: em || null });
         push("Patient added");
         navigate(`/patients/${patient.data.id}`);
       }
@@ -78,8 +83,11 @@ export default function PatientFormPage() {
           <Field label="Mobile number" error={errors.mobile} hint="7–15 digits, optional + prefix">
             <Input value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="+91 98450 12345" inputMode="tel" />
           </Field>
+          <Field label="Email (optional)" error={errors.email} hint="Used to send the report PDF">
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="patient@example.com" inputMode="email" />
+          </Field>
           <div className="flex gap-2 pt-1">
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : isEdit ? "Save changes" : "Add patient"}</Button>
+            <Button type="submit" disabled={busy}>{busy ? "SavingÃ¢â‚¬Â¦" : isEdit ? "Save changes" : "Add patient"}</Button>
             <Button type="button" variant="secondary" onClick={() => navigate(-1)}>Cancel</Button>
           </div>
         </form>
@@ -87,3 +95,5 @@ export default function PatientFormPage() {
     </div>
   );
 }
+
+

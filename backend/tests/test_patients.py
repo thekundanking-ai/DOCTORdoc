@@ -33,6 +33,7 @@ def _create_other_clinic_user() -> dict:
             full_name="Other Staff",
             role="staff",
             clinic_id=clinic.id,
+            email_verified=True,
         )
         db.add(user)
         db.commit()
@@ -151,3 +152,44 @@ def test_archive_workflow(client):
 def test_unauthenticated_access(client):
     assert client.get("/patients").status_code == 401
     assert client.post("/patients", json={"full_name": "X", "mobile": MOBILE}).status_code == 401
+
+
+def test_create_patient_with_email(client):
+    _bootstrap(client)
+    _login(client)
+    resp = client.post("/patients", json={"full_name": "Email Patient", "mobile": MOBILE, "email": "Patient@Example.com"})
+    assert resp.status_code == 201
+    assert resp.json()["email"] == "patient@example.com"
+
+
+def test_create_patient_email_optional(client):
+    _bootstrap(client)
+    _login(client)
+    resp = client.post("/patients", json={"full_name": "No Email", "mobile": MOBILE})
+    assert resp.status_code == 201
+    assert resp.json()["email"] is None
+
+
+def test_create_patient_invalid_email_rejected(client):
+    _bootstrap(client)
+    _login(client)
+    for bad in ("not-an-email", "a@b", "a b@c.com", "@x.com"):
+        resp = client.post("/patients", json={"full_name": "Bad Email", "mobile": MOBILE, "email": bad})
+        assert resp.status_code == 422, bad
+
+
+def test_update_patient_email(client):
+    _bootstrap(client)
+    _login(client)
+    patient_id = _create_patient(client, "Alice Smith")
+    resp = client.patch(f"/patients/{patient_id}", json={"email": "alice@example.com"})
+    assert resp.status_code == 200
+    assert resp.json()["email"] == "alice@example.com"
+
+
+def test_update_patient_invalid_email_rejected(client):
+    _bootstrap(client)
+    _login(client)
+    patient_id = _create_patient(client, "Alice Smith")
+    resp = client.patch(f"/patients/{patient_id}", json={"email": "bad"})
+    assert resp.status_code == 422

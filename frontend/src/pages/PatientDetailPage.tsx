@@ -30,19 +30,26 @@ export default function PatientDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [archiveOpen, setArchiveOpen] = useState(false);
 
+  const loadPatient = useCallback(async () => {
+    const patientRes = await api.patients.get(id);
+    setPatient(patientRes.data);
+  }, [id]);
+
+  const loadConsultations = useCallback(async () => {
+    const consultationsRes = await api.consultations.list(id, { page_size: 50 });
+    setConsultations(consultationsRes.data.items);
+  }, [id]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
-      const patientRes = await api.patients.get(id);
-      setPatient(patientRes.data);
-      const consultationsRes = await api.consultations.list(id, { page_size: 50 });
-      setConsultations(consultationsRes.data.items);
+      await Promise.all([loadPatient(), loadConsultations()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load patient");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [loadPatient, loadConsultations]);
 
   useEffect(() => {
     void load();
@@ -124,7 +131,14 @@ export default function PatientDetailPage() {
                   </div>
                   <Badge tone={statusTone(consultation.status)}>{consultation.status.replace("_", " ")}</Badge>
                 </div>
-                {consultation.audio && <TranscriptionPanel consultationId={consultation.id} hasAudio patientId={patient.id} />}
+                {(consultation.audio || consultation.status === "completed") && (
+                  <TranscriptionPanel
+                    consultationId={consultation.id}
+                    hasAudio={!!consultation.audio}
+                    patientId={patient.id}
+                    onTerminal={() => void loadConsultations()}
+                  />
+                )}
               </Card>
             ))}
           </div>

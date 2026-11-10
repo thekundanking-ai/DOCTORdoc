@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/ui/Button";
@@ -77,6 +78,12 @@ export default function LoginPage() {
             {busy ? "Signing in…" : "Sign in"}
           </Button>
         </form>
+        <p className="mt-6 text-center text-sm text-ink-sub">
+          Need an account?{" "}
+          <Link to="/register" className="font-medium text-primary hover:text-primary-hover">
+            Create account
+          </Link>
+        </p>
       </Card>
     </div>
   );

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db import get_db
-from app.models import Consultation, ConsultationReport, ReportDelivery, User
+from app.models import Consultation, ConsultationReport, Patient, ReportDelivery, User
 from app.schemas.report import ReportUpdate
 from app.services import report_service
 
@@ -39,6 +39,7 @@ class DeliveryOut(BaseModel):
     clinic_id: int
     channel: str
     status: str
+    recipient: str | None = None
     error_message: str | None
     delivered_at: object | None
     created_at: object
@@ -114,3 +115,30 @@ def deliver(
     db: Session = Depends(get_db),
 ) -> ReportDelivery:
     return report_service.deliver_report(db, consultation_id, user)
+
+
+@router.get("/{consultation_id}/report/deliveries", response_model=list[DeliveryOut])
+def list_report_deliveries(
+    consultation_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ReportDelivery]:
+    consultation = _get_scoped_consultation(db, consultation_id, user.clinic_id)
+    if consultation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consultation not found")
+    report = db.scalar(select(ConsultationReport).where(ConsultationReport.consultation_id == consultation_id))
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No report found")
+    patient = db.get(Patient, report.patient_id)
+    deliveries = list(
+        db.scalars(
+            select(ReportDelivery)
+            .where(ReportDelivery.report_id == report.id)
+            .order_by(ReportDelivery.created_at.desc())
+        ).all()
+    )
+    for d in deliveries:
+        d.recipient = patient.email if patient else None
+    return deliveries
+
+

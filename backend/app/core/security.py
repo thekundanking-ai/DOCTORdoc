@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
+import secrets
 
 import jwt
 from argon2 import PasswordHasher
@@ -18,6 +20,15 @@ def verify_password(plain: str, hashed: str) -> bool:
         return _ph.verify(hashed, plain)
     except (VerifyMismatchError, InvalidHashError):
         return False
+
+
+
+def generate_verification_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_verification_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def create_access_token(subject: str | int, role: str, expires_delta: timedelta | None = None) -> str:

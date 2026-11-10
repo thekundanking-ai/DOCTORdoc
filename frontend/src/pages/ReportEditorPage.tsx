@@ -7,7 +7,7 @@ import { Modal } from "../components/ui/Modal";
 import { Skeleton } from "../components/ui/Skeleton";
 import { useToast } from "../components/ui/Toast";
 import { BackIcon } from "../components/ui/icons";
-import { api, type Report, type ReportStructured } from "../lib/api";
+import { api, type Delivery, type Report, type ReportStructured } from "../lib/api";
 
 function asLines(value: string[] | null | undefined): string {
   return (value || []).join("\n");
@@ -66,6 +66,9 @@ export default function ReportEditorPage() {
   const [busy, setBusy] = useState(false);
   const [regenOpen, setRegenOpen] = useState(false);
   const [approveOpen, setApproveOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sentOnce, setSentOnce] = useState(false);
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,9 +84,19 @@ export default function ReportEditorPage() {
     }
   }, [consultationId]);
 
+  const loadDeliveries = useCallback(async () => {
+    try {
+      const res = await api.reports.deliveries(consultationId);
+      setDeliveries(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setDeliveries([]);
+    }
+  }, [consultationId]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadDeliveries();
+  }, [load, loadDeliveries]);
 
   function setField(key: keyof ReportStructured, value: string | string[]) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -174,15 +187,23 @@ export default function ReportEditorPage() {
   }
 
   async function deliver() {
-    setBusy(true);
+    setSending(true);
     setError(null);
     try {
       const res = await api.reports.deliver(consultationId);
-      push(res.data.status === "sent" ? "Report sent to patient" : `Delivery ${res.data.status}`);
+      if (res.data.status === "sent") {
+        setSentOnce(true);
+        push("Report sent to patient");
+      } else {
+        push(`Delivery ${res.data.status}`);
+      }
+      await loadDeliveries();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Delivery failed");
+      const msg = err instanceof Error ? err.message : "Delivery failed";
+      setError(msg);
+      push(msg);
     } finally {
-      setBusy(false);
+      setSending(false);
     }
   }
 
@@ -198,6 +219,7 @@ export default function ReportEditorPage() {
   const current = report?.status === "approved" ? report.structured_report : draft;
   const warnings = current?.unclear_or_missing || [];
   const approved = report?.status === "approved";
+  const deliveryDone = sentOnce || deliveries.some((d) => d.status === "sent");
   const generating = report?.status === "generating";
   const failed = report?.status === "failed";
 
@@ -234,7 +256,7 @@ export default function ReportEditorPage() {
         <EmptyState
           title="No report generated"
           description="Generate a structured report from the completed transcript."
-          action={<Button onClick={() => void generate()} disabled={busy}>{busy ? "Generating…" : "Generate Consultation Report"}</Button>}
+          action={<Button onClick={() => void generate()} disabled={busy}>{busy ? "Generatingâ€¦" : "Generate Consultation Report"}</Button>}
         />
       )}
 
@@ -242,7 +264,7 @@ export default function ReportEditorPage() {
         <Card className="p-6">
           <div className="flex items-center gap-3">
             <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary" />
-            <span className="text-sm text-primary">Generating report…</span>
+            <span className="text-sm text-primary">Generating reportâ€¦</span>
           </div>
         </Card>
       )}
@@ -257,7 +279,7 @@ export default function ReportEditorPage() {
             <Card className="border-amber-200 bg-amber-50 p-4">
               <p className="text-sm font-semibold text-warning">Review required</p>
               <ul className="mt-1 list-inside list-disc text-sm text-amber-800">
-                {!current.diagnosis && <li>No diagnosis recorded — confirm the diagnosis before approving.</li>}
+                {!current.diagnosis && <li>No diagnosis recorded â€” confirm the diagnosis before approving.</li>}
                 {warnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
@@ -275,9 +297,9 @@ export default function ReportEditorPage() {
             <div className="rounded-control bg-slate-50 p-4">
               <h2 className="text-sm font-semibold text-ink">Patient information</h2>
               <div className="mt-2 grid gap-2 text-sm text-ink-sub sm:grid-cols-3">
-                <span>Name: {current.patient_information?.name ?? "—"}</span>
-                <span>Mobile: {current.patient_information?.mobile ?? "—"}</span>
-                <span>Date: {current.patient_information?.consultation_date ?? "—"}</span>
+                <span>Name: {current.patient_information?.name ?? "â€”"}</span>
+                <span>Mobile: {current.patient_information?.mobile ?? "â€”"}</span>
+                <span>Date: {current.patient_information?.consultation_date ?? "â€”"}</span>
               </div>
             </div>
 
@@ -288,11 +310,11 @@ export default function ReportEditorPage() {
                     <h3 className="mb-1 text-[13px] font-medium text-ink">{section.label}</h3>
                     {Array.isArray(current[section.key]) ? (
                       <p className="whitespace-pre-wrap text-sm text-ink">
-                        {(current[section.key] as string[])?.join("\n") || "—"}
+                        {(current[section.key] as string[])?.join("\n") || "â€”"}
                       </p>
                     ) : (
                       <p className="whitespace-pre-wrap text-sm text-ink">
-                        {(current[section.key] as string) || "—"}
+                        {(current[section.key] as string) || "â€”"}
                       </p>
                     )}
                   </div>
@@ -300,11 +322,11 @@ export default function ReportEditorPage() {
                 <div>
                   <h3 className="mb-1 text-[13px] font-medium text-ink">Medications</h3>
                   {!current.medications?.length ? (
-                    <p className="text-sm text-ink">—</p>
+                    <p className="text-sm text-ink">â€”</p>
                   ) : (
                     current.medications.map((m, i) => (
                       <p key={i} className="text-sm text-ink">
-                        {m.name ?? "—"} · {m.dosage ?? "—"} · {m.frequency ?? "—"} · {m.duration ?? "—"}
+                        {m.name ?? "â€”"} Â· {m.dosage ?? "â€”"} Â· {m.frequency ?? "â€”"} Â· {m.duration ?? "â€”"}
                       </p>
                     ))
                   )}
@@ -334,7 +356,7 @@ export default function ReportEditorPage() {
                         <input value={med.frequency ?? ""} onChange={(e) => setMedField(i, "frequency", e.target.value)} placeholder="Frequency" className="h-10 rounded-control border border-line bg-white px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
                         <div className="flex gap-1">
                           <input value={med.duration ?? ""} onChange={(e) => setMedField(i, "duration", e.target.value)} placeholder="Duration" className="h-10 flex-1 rounded-control border border-line bg-white px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                          <button onClick={() => removeMed(i)} className="rounded-control px-2 text-sm text-danger hover:bg-red-50" aria-label={`Remove medication ${i + 1}`}>×</button>
+                          <button onClick={() => removeMed(i)} className="rounded-control px-2 text-sm text-danger hover:bg-red-50" aria-label={`Remove medication ${i + 1}`}>Ã—</button>
                         </div>
                       </div>
                     ))}
@@ -345,7 +367,7 @@ export default function ReportEditorPage() {
                 </div>
 
                 <div className="flex gap-2 border-t border-line pt-4">
-                  <Button onClick={() => void saveDraft()} disabled={busy}>{busy ? "Saving…" : "Save Draft"}</Button>
+                  <Button onClick={() => void saveDraft()} disabled={busy}>{busy ? "Savingâ€¦" : "Save Draft"}</Button>
                   <ButtonLink to={backTo} variant="secondary">Back</ButtonLink>
                 </div>
               </>
@@ -356,15 +378,40 @@ export default function ReportEditorPage() {
             <div className="space-y-3 border-t border-line pt-4">
               <p className="text-sm text-success">
                 Approved by {report.approved_by ? `user #${report.approved_by}` : "doctor"} on{" "}
-                {report.approved_at ? new Date(report.approved_at).toLocaleString() : "—"}
+                {report.approved_at ? new Date(report.approved_at).toLocaleString() : "â€”"}
               </p>
               <div className="flex gap-2">
                 <Button variant="secondary" size="sm" onClick={() => void downloadPdf()}>
                   Download PDF
                 </Button>
-                <Button size="sm" onClick={() => void deliver()} disabled={busy}>
-                  {busy ? "Sending…" : "Send to patient"}
+                <Button size="sm" onClick={() => void deliver()} disabled={sending || deliveryDone}>
+                  {sending ? "Sendingâ€¦" : deliveryDone ? "Report sent" : "Send Report"}
                 </Button>
+              </div>
+              <div className="border-t border-line pt-3">
+                <h3 className="mb-2 text-[13px] font-medium text-ink">Delivery history</h3>
+                {deliveries.length === 0 ? (
+                  <p className="text-sm text-ink-sub">No delivery attempts yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {deliveries.map((d) => (
+                      <li key={d.id} className="rounded-control border border-line p-3 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={d.status === "sent" ? "font-medium text-success" : d.status === "failed" ? "font-medium text-danger" : "font-medium text-ink"}>
+                            {d.status === "sent" ? "Sent via SMTP" : d.status === "failed" ? "Failed" : "Pending"}
+                          </span>
+                          <span className="text-xs text-ink-sub">{d.created_at ? new Date(d.created_at).toLocaleString() : "â€”"}</span>
+                        </div>
+                        {d.recipient && <p className="mt-1 text-xs text-ink-sub">Recipient: {d.recipient}</p>}
+                        {d.status === "sent" ? (
+                          <p className="mt-1 text-xs text-ink-sub">Accepted by the mail server (SMTP â€” not inbox-confirmed).</p>
+                        ) : d.error_message ? (
+                          <p className="mt-1 text-xs text-danger">{d.error_message}</p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           )}
@@ -394,3 +441,4 @@ export default function ReportEditorPage() {
     </div>
   );
 }
+
